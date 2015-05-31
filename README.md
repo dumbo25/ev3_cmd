@@ -1,7 +1,10 @@
 # ev3_cmd
-OSX command line python script for controlling envisalink 3 connected to DSC PC1616
+Python script (v2.7.6) for controlling envisalink 3 connected to DSC PC1616
 
-Open a terminal window
+Developing an instructable for the whole system.
 
-Execute the command (written in python v2.7.6)
-$ python ev3.py
+ev3.py is a command line script.
+   Open a terminal window
+
+   Execute the following command:
+   $ python ev3.py
