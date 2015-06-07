@@ -8,3 +8,5 @@ ev3.py is a command line script.
 
    Execute the following command:
    $ python ev3.py
+
+ev3pi.py adds support for SQLite
