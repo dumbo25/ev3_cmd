@@ -9,7 +9,7 @@
 #
 # Versions
 #	ev3.py is command-line or cron version. Source = envisalinkV24.py
-#	ev3pi.py above plus SQLite installed and reads/writes from/to [path]security.db. S = envisalinkV27.py
+#	ev3pi.py above plus SQLite installed and reads/writes from/to [path]security.db. 
 #
 # The script can be run from a command line or from a crontab - adjust parameters accordingly.
 #
@@ -20,29 +20,28 @@
 # While the script is running in command line, entering: leave, sleep, disarm, panic or status 
 # will send the appropriate command. Entering <return> will show valid commands. disarm will 
 # also turn off the panic alarm. Both leave and sleep will arm the security system.
-# 
-# To Dos:
-#	2nd script monitors this script and restarts it automatically when not running
-#		2nd script is a crontab that runs every 5 minutes
-#		if not already armed then
-#			at 11pm, turn on alarm automatically
-#			at 6am, disarm automatically
-#	modify webpage to show security system
-#		webpage reads current status from SQLite
-#		webpage writes to SQLite and script reads command - add command row
-#	send text message on alert
-#		send an alert message if a door is open after 11pm 
-#	Need installer to run line(s) to add smoke alarm sensor to security system
-#	Run line(s) and add garage door sensor to security system
+#
+# ev3auto.py is a companion script that automatically arms and disarms the security system 
+# according to a schedule. Features of this script are:
+#	Vacation indicator (yes, no): If on vacation, don't make any changes automatically
+#	Arm/disarm schedule by day with arm and disarm times
+#	Sends text message to cellphone if on vacation but system is not in leave arm state
+#
+#	Create crontab to run ev3chk.py
+#
+#	ev3chk.py script monitors this script and restarts this script automatically if not running
 #
 # Lower priority to dos:
 #	add try on array lookups and handle any failures
 #	do better error checking on responses received (i.e., check length of data, and use checksum)
 #	replace string.split, which is deprecated with (reg edit) re.split
+#	need installer to run line(s) to add smoke alarm sensor to security system (or figure out DIY)
+#	Add javascript to change arm/disarm times (or, lazy way is to add +/- on each row to +/- 1 hour)
 #
 # Don't do these:
 #	add doorbell - another project is to add a remote smart doorbell
 #	basic failing of security system is whether or not door is locked - need another project
+#	run line to add garage door sensor to security system - read sensor instead
 
 import socket
 import sys
@@ -57,16 +56,16 @@ import sqlite3
 
 class Envisalink:
 	def __init__(self):
-		self.host = '192.168.1.92'	# EnvisaLink 3's IP address - your ev3's IP address
+		self.host = '192.168.1.92'	# EnvisaLink 3's IP address
 		self.port = int(4025)		# port number EnvisaLink listens on
 		#
-		# DON'T PUBLISH ITEMS BELOW
+		# Change the items in angle brackets below <>
 		#
-		self.password = 'passwd'		# your password - 6 characters
-		self.masterCode = '1111'		# your master code - 4 digits
-		self.installersCode = '5555'	# your installer's code - default is 5555
+		self.password = <password>		# your password - 6 characters
+		self.masterCode = <master code>	# your master code - 4 digits
+		self.installersCode = <installer code>	# your installer's code - default is 5555
 		#
-		# DON'T PUBLISH ITEMS ABOVE
+		# CHANGE THE ITEMS ABOVE
 		#
 		self.loggedin = False
 		self.poll_ack = True
@@ -77,18 +76,26 @@ class Envisalink:
 		self.sleep = 0
 		
 		# Use the following line when running on raspberry pi, or 
-		# self.file_log = open('/tmp/envisalink.log', 'w')
-		# use the following line when running from MacBook terminal window
-		self.file_log = sys.stderr
+		self.file_log = open('/tmp/envisalink.log', 'w')
+		# use the following line when running from MacBook or Raspberry Pi terminal window
+		# self.file_log = sys.stderr
 		
 		# Use True when debugging, otherwise set to False
-		self.file_logging = True
+		self.file_logging = False
+
+		# set following to False when input from command line, otherwise commands are from SQLite
+		self.input_db = True
+		
 		# database connection - include path to database file
-		# the line below needs to include the path to the database, mine is /Users/myname/Desktop/Security/security.db
-		self.db_con = sqlite3.connect('security.db')
+		# On the Mac use:
+		# self.db_file = '/Users/<your computer's name>/Desktop/wifiEnabledHome/SecuritySystem/security.db'
+		# On the Raspberry Pi use:
+		self.db_file = '/var/www/db/security.db'
+		# don't use both of the above, comment out the other one
+		
+		self.db_con = sqlite3.connect(self.db_file)
 		self.db_cmd = self.db_con.cursor()
 		
-		# don't use both of the above :)
 		self.printMutex = threading.Lock()
 		self.socketMutex = threading.Lock()
 		self.modes = {'0' : 'Away', '1' : 'Stay in house', '2' : 'Zero entry away', '3' : 'Zero entry stay in house'}
@@ -239,7 +246,7 @@ class Envisalink:
 					self.poll_ack = True
 					self.sleep = 0
 					self.status['system'] = 'logged in'
-					self.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = 'script' WHERE name = 'running';")
+					self.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = 'running' WHERE name = 'script';")
 					self.db_con.commit();
 				self.printNormal(msg + "ack " + self.commands[data])
 				if data == '030':
@@ -268,7 +275,7 @@ class Envisalink:
 				self.printNormal(msg + "login successful")
 				self.status['system'] = 'logged in'
 				self.loggedin = True
-				self.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = 'script' WHERE name = 'running';")
+				self.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = 'running' WHERE name = 'script';")
 				self.db_con.commit();
 			elif word[3:4] == '2':
 				self.printFatal(msg + "login timed out. password not sent within 10 seconds of connection.")
@@ -650,24 +657,42 @@ class Envisalink:
 		self.printData()
 
 	def heardEnter(self):
-		i,o,e = select.select([sys.stdin],[],[],0.0001)
-		for s in i:
-			if s == sys.stdin:
-				k = sys.stdin.readline()
-				k = k[:len(k)-1]
-				if k == 'sleep':
-					self.sendCommand('031', 'keyboard: sleep (arm stay)', '1')
-				elif k == 'leave':
-					self.sendCommand('030', 'keyboard: leave (arm leave)', '1')
-				elif k == 'disarm':
-					self.sendCommand('040', 'keyboard: disarm', '1' + self.masterCode)
-				elif k == 'panic':
-					self.sendCommand('060', 'keyboard: panic', '1')
-				elif k == 'status':
-					self.sendCommand('001', 'keyboard: status')
-				else:
-					self.printNormal('keyboard: unrecognized command = ' + k)
-					self.printNormal('recognized commands: sleep, leave, disarm, panic, status')
+		if self.input_db:
+			values = self.db_cmd.execute("select * from status where name = 'command';")
+			for row in values:
+				k = row[3]
+
+			if k == 'sleep':
+				self.sendCommand('031', 'keyboard: sleep (arm stay)', '1')
+			elif k == 'leave':
+				self.sendCommand('030', 'keyboard: leave (arm leave)', '1')
+			elif k == 'disarm':
+				self.sendCommand('040', 'keyboard: disarm', '1' + self.masterCode)
+			elif k == 'panic':
+				self.sendCommand('060', 'keyboard: panic', '1')
+			elif k == 'status':
+				self.sendCommand('001', 'keyboard: status')
+			self.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = '' WHERE name = 'command';")
+			self.db_con.commit();
+		else:
+			i,o,e = select.select([sys.stdin],[],[],0.0001)
+			for s in i:
+				if s == sys.stdin:
+					k = sys.stdin.readline()
+					k = k[:len(k)-1]
+					if k == 'sleep':
+						self.sendCommand('031', 'keyboard: sleep (arm stay)', '1')
+					elif k == 'leave':
+						self.sendCommand('030', 'keyboard: leave (arm leave)', '1')
+					elif k == 'disarm':
+						self.sendCommand('040', 'keyboard: disarm', '1' + self.masterCode)
+					elif k == 'panic':
+						self.sendCommand('060', 'keyboard: panic', '1')
+					elif k == 'status':
+						self.sendCommand('001', 'keyboard: status')
+					else:
+						self.printNormal('keyboard: unrecognized command = ' + k)
+						self.printNormal('recognized commands: sleep, leave, disarm, panic, status')
 		return
 
 	def getStatus(self):
@@ -700,16 +725,41 @@ class Envisalink:
 		os.close(numfd)		# close the just-duplicated descr
 		return numfd 
 
+	def	dbInit(self):
+		self.db_cmd.execute("CREATE TABLE IF NOT EXISTS status (tdate DATE, ttime TIME, name TEXT, value TEXT);")
+		self.db_cmd.execute("SELECT COUNT(*) from status")
+		(rows,) = self.db_cmd.fetchone()
+		if rows == 0:
+			self.db_cmd.execute("INSERT INTO status values(date('now'), time('now'), 'system', 'disarmed');")
+			self.db_cmd.execute("INSERT INTO status values(date('now'), time('now'), 'alarm', 'none');")
+			self.db_cmd.execute("INSERT INTO status values(date('now'), time('now'), 'zone', 'closed');")
+			self.db_cmd.execute("INSERT INTO status values(date('now'), time('now'), 'script', 'not running');")
+			self.db_cmd.execute("INSERT INTO status values(date('now'), time('now'), 'command', '');")
+			self.db_cmd.execute("INSERT INTO status values(date('now'), time('now'), 'vacation', 'no');")
+		self.db_cmd.execute("CREATE TABLE IF NOT EXISTS schedule (tdate DATE, ttime TIME, day TEXT, arm TIME, disarm TIME);")
+		self.db_cmd.execute("SELECT COUNT(*) from schedule")
+		(rows,) = self.db_cmd.fetchone()
+		if rows == 0:
+			# in sqlite day of week (%w): Sunday = 0, ... Saturday = 6 
+			self.db_cmd.execute("INSERT INTO schedule values(date('now'), time('now'), 'Sunday', time('00:00'), time('05:00'));")
+			self.db_cmd.execute("INSERT INTO schedule values(date('now'), time('now'), 'Monday', time('00:00'), time('05:00'));")
+			self.db_cmd.execute("INSERT INTO schedule values(date('now'), time('now'), 'Tuesday', time('00:00'), time('05:00'));")
+			self.db_cmd.execute("INSERT INTO schedule values(date('now'), time('now'), 'Wednesday', time('00:00'), time('05:00'));")
+			self.db_cmd.execute("INSERT INTO schedule values(date('now'), time('now'), 'Thursday', time('00:00'), time('05:00'));")
+			self.db_cmd.execute("INSERT INTO schedule values(date('now'), time('now'), 'Friday', time('00:00'), time('05:00'));")
+			self.db_cmd.execute("INSERT INTO schedule values(date('now'), time('now'), 'Saturday', time('00:00'), time('05:00'));")
 
 if __name__ == '__main__':
 		try:
 			e = Envisalink()
 
-			e.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = 'script' WHERE name = 'not running';")
-			e.db_con.commit();
-
 			e.printNormal('system: start envisalink script')
 			e.resetData()
+
+			e.dbInit()
+			e.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = 'not running' WHERE name = 'script';")
+			e.db_con.commit()
+
 			e.connect()
 			e.login()
 
