@@ -1,0 +1,6 @@
+#
+# check every 5 minutes if security system is running
+*/5 * * * * /usr/local/bin/ev3chk.sh >/dev/null 2>&1
+#
+# check every 15 minutes if security system is in good state
+*/15 * * * * /usr/local/bin/ev3auto.chk >/dev/null 2>&1
