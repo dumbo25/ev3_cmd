@@ -4,10 +4,10 @@ Python script (v2.7.6) for controlling envisalink 3 connected to DSC PC1616
 Developing an instructable for the whole system.
 
 ev3.py is a command line script.<br>
-   Once the envisalink3 board is installed and working, then <br>
-   Open a terminal window<br>
-   Execute the following command:<br>
-   $ python ev3.py<br>
+   * Once the envisalink3 board is installed and working, then <br>
+   ** Open a terminal window<br>
+   * Execute the following command:<br>
+   ** $ python ev3.py<br>
 
 The following files run on a Raspberry Pi:<br>
    Put these in /usr/local/bin and make executable<br>
