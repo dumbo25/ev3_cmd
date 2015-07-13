@@ -102,11 +102,11 @@ if __name__ == '__main__':
 				# Should it disarm between disarm and arm time
 				if at == zt:
 					if ct >= dt and ct < mt:
-						if system == 'arm':
+						if system == 'armed':
 							e.db_cmd.execute('UPDATE status SET value = "disarm" WHERE name = "command";')
 				else:
 					if ct >= dt and ct < mt:
-						if system == 'arm':
+						if system == 'armed':
 							e.db_cmd.execute('UPDATE status SET value = "disarm" WHERE name = "command";')
 
 		finally:
