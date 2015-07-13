@@ -3,4 +3,4 @@
 */5 * * * * /usr/local/bin/ev3chk.sh >/dev/null 2>&1
 #
 # check every 15 minutes if security system is in good state
-*/15 * * * * /usr/local/bin/ev3auto.sh >/dev/null 2>&1
+*/15 * * * * python /usr/local/bin/ev3auto.py >/dev/null 2>&1
