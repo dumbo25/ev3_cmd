@@ -53,19 +53,23 @@ import signal
 import select
 import threading
 import sqlite3
+import smtplib
 
 class Envisalink:
 	def __init__(self):
-		self.host = '192.168.1.92'	# EnvisaLink 3's IP address
-		self.port = int(4025)		# port number EnvisaLink listens on
 		#
-		# Change the items in angle brackets below <>
+		# CHANGE THE ITEMS IN ANGLE BRACKETS BELOW <> - DO NOT PUBLISH
 		#
-		self.password = <password>		# your password - 6 characters
-		self.masterCode = <master code>	# your master code - 4 digits
-		self.installersCode = <installer code>	# your installer's code - default is 5555
+                self.host = <envisalink's IP address in quotes>     		# EnvisaLink 3's IP address
+                self.port = int(4025)           		# port number EnvisaLink listens on
+		self.password = <your envisaging password>			# your password - 6 characters
+		self.masterCode = <your master code>			# your master code - 4 digits
+		self.installersCode = <your installer's code>			# your installer's code - default is 5555
+                self.gmail_password = <your gmail password>               # your gmail password
+                self.gmail_address = <your gmail address>	# your gmail email address
+		self.cellphone = <your cell#>@<carrier's sms>	# your carrier's way to text yourself
 		#
-		# CHANGE THE ITEMS ABOVE
+		# CHANGE THE ITEMS ABOVE - DO NOT PUBLISH
 		#
 		self.loggedin = False
 		self.poll_ack = True
@@ -74,28 +78,28 @@ class Envisalink:
 		self.max_partitions = 1
 		self.max_zones = 6
 		self.sleep = 0
-		
-		# Use the following line when running on raspberry pi, or 
+
+		# Use the following line when running on raspberry pi, or
 		self.file_log = open('/tmp/envisalink.log', 'w')
 		# use the following line when running from MacBook or Raspberry Pi terminal window
 		# self.file_log = sys.stderr
-		
+
 		# Use True when debugging, otherwise set to False
 		self.file_logging = False
 
 		# set following to False when input from command line, otherwise commands are from SQLite
 		self.input_db = True
-		
+
 		# database connection - include path to database file
 		# On the Mac use:
 		# self.db_file = '/Users/<your computer's name>/Desktop/wifiEnabledHome/SecuritySystem/security.db'
 		# On the Raspberry Pi use:
 		self.db_file = '/var/www/db/security.db'
 		# don't use both of the above, comment out the other one
-		
+
 		self.db_con = sqlite3.connect(self.db_file)
 		self.db_cmd = self.db_con.cursor()
-		
+
 		self.printMutex = threading.Lock()
 		self.socketMutex = threading.Lock()
 		self.modes = {'0' : 'Away', '1' : 'Stay in house', '2' : 'Zero entry away', '3' : 'Zero entry stay in house'}
@@ -157,7 +161,17 @@ class Envisalink:
 			'024' : 'API not ready to arm', '025' : 'API command invalid length',
 			'026' : 'API user code not required', '027' : 'API invalid characters'
 			}
-	
+
+        def sendAlert(self, msg):
+                subject = msg
+                message = 'Subject: %s' % (subject)
+                mail = smtplib.SMTP("smtp.gmail.com",587)
+                mail.ehlo()
+                mail.starttls()
+                mail.login(self.gmail_address, self.gmail_password)
+                mail.sendmail("cell", self.cellphone, message)
+                mail.close()
+
 	def connect(self):
 		try:
 			self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -168,7 +182,7 @@ class Envisalink:
 			self.status['system'] = 'connected'
 		except socket.error, (value,message):
 			self.printFatal(message)
-		
+
 	def login(self):
 		time.sleep(1)
 		self.sendCommand(005, 'login', self.password)
@@ -225,7 +239,7 @@ class Envisalink:
 						words[i] = word
 						self.decodeResponse(word)
 			return msg
-			
+
 		except socket.error, (value,message):
 			# non-blocking socket correctly returns an error of temporarily unavailable
 			# self.printNormal('system: ' + message)
@@ -288,7 +302,7 @@ class Envisalink:
 			# write to security.db
 			msg += 'lit keypad LEDs = '
 			b = int(word[3:5],16)
-			
+
 			# Bit 0 - Ready LED lit
 			if b & 0x01 != 0:
 				msg += 'ready '
@@ -319,12 +333,12 @@ class Envisalink:
 			# Bit 7 - Backlight LED lit
 			if b & 0x80 != 0:
 				msg += 'backlight '
-			
+
 			self.printNormal(msg)
 		elif cmd == '511':
 			msg += 'flashing keypad LEDs = '
 			b = int(word[3:5],16)
-			
+
 			# Bit 0 - Ready LED lit
 			if b & 0x01 != 0:
 				msg += 'ready '
@@ -350,7 +364,7 @@ class Envisalink:
 			# Bit 7 - Backlight LED lit
 			if b & 0x80 != 0:
 				msg += 'backlight '
-			
+
 			self.printNormal(msg)
 		elif cmd == '550':
 			self.printNormal(msg + 'time and date ' + word[3:5] + ":" + word[5:7] + " " + word[7:9] + "/" + word[9:11] + "/20" + word[11:13])
@@ -367,6 +381,7 @@ class Envisalink:
 				if int(partition) <= self.max_partitions:
 					self.printNormal(msg + 'alarm. partition = ' + partition + ' zone = ' + self.zones[zone])
 					# send SMS alert on alarm  <<< need to do this
+					seld.sendAlert('House alarm triggered')
 					# write to security.db
 					self.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = 'alarm' WHERE name = 'alarm';")
 					self.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = 'zone' WHERE name = " + self.zones[zone] + ";")
@@ -378,6 +393,7 @@ class Envisalink:
 				if int(partition) <= self.max_partitions:
 					self.printNormal(msg + 'alarm cleared. partition = ' + partition + ' zone = ' + self.zones[zone])
 					# send all clear SMS when cleared  <<< need to do this
+                                        seld.sendAlert('House alarm cleared')
 					# write to security.db
 					self.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = 'alarm' WHERE name = 'none';")
 					self.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = 'zone' WHERE name = 'closed';")
@@ -587,7 +603,7 @@ class Envisalink:
 			# Bit 6 - low battery
 			if b & 0x40 != 0:
 				msg += 'low battery '
-			
+
 			self.printNormal(msg)
 		elif cmd == '900':
 			self.printNormal(msg + 'code required')
@@ -619,7 +635,7 @@ class Envisalink:
 				print >> self.file_log, self.timeStamp() + msg
 		finally:
 			self.printMutex.release()
-		
+
 
 	def printFatal(self, msg):
 		self.printMutex.acquire()
@@ -672,6 +688,30 @@ class Envisalink:
 				self.sendCommand('060', 'keyboard: panic', '1')
 			elif k == 'status':
 				self.sendCommand('001', 'keyboard: status')
+			elif k == 'vacation':
+				self.printNormal("In vacation")
+				# toggle vacation on and off
+				values2 = self.db_cmd.execute("select * from status where name = 'vacation';")
+				for row in values2:
+					v = row[3]
+
+				if v == 'yes':
+					self.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = 'no' WHERE name = 'vacation';")
+                                if v == 'no':
+					self.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = 'yes' WHERE name = 'vacation';")
+
+                        elif k == 'schedule':
+                                self.printNormal("In schedule")
+                                # toggle schedule on and off
+                                values3 = self.db_cmd.execute("select * from status where name = 'schedule';")
+                                for row in values3:
+                                        v = row[3]
+
+                                if v == 'on':
+                                        self.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = 'off' WHERE name = 'schedule';")
+                                if v == 'off':
+                                        self.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = 'on' WHERE name = 'schedule';")
+
 			self.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = '' WHERE name = 'command';")
 			self.db_con.commit();
 		else:
@@ -706,13 +746,13 @@ class Envisalink:
 			self.sendCommand(0, 'poll')
 		else:
 			if self.poll_retries == self.max_poll_retries:
-				# try to reconnect ?	
+				# try to reconnect ?
 				self.printFatal('connection closed, no response to poll')
 			else:
 				self.sendCommand(0, 'poll')
 				self.poll_retries += 1
 				self.printNormal('system: poll retry = ' + str(self.poll_retries))
-				
+
 		# every 60s * N minutes send a poll
 		self.p = threading.Timer(60*10, e.poll)
 		self.p.daemon = True
@@ -736,6 +776,7 @@ class Envisalink:
 			self.db_cmd.execute("INSERT INTO status values(date('now'), time('now'), 'script', 'not running');")
 			self.db_cmd.execute("INSERT INTO status values(date('now'), time('now'), 'command', '');")
 			self.db_cmd.execute("INSERT INTO status values(date('now'), time('now'), 'vacation', 'no');")
+			self.db_cmd.execute("INSERT INTO status values(date('now'), time('now'), 'schedule', 'off');")
 		self.db_cmd.execute("CREATE TABLE IF NOT EXISTS schedule (tdate DATE, ttime TIME, day TEXT, arm TIME, disarm TIME);")
 		self.db_cmd.execute("SELECT COUNT(*) from schedule")
 		(rows,) = self.db_cmd.fetchone()
@@ -750,58 +791,66 @@ class Envisalink:
 			self.db_cmd.execute("INSERT INTO schedule values(date('now'), time('now'), 'Saturday', time('00:00'), time('05:00'));")
 
 if __name__ == '__main__':
-		try:
-			e = Envisalink()
+	try:
+		e = Envisalink()
 
-			e.printNormal('system: start envisalink script')
-			e.resetData()
+		e.printNormal('system: start envisalink script')
+		e.resetData()
 
-			e.dbInit()
-			e.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = 'not running' WHERE name = 'script';")
-			e.db_con.commit()
+		e.dbInit()
+		e.db_cmd.execute("UPDATE status SET tdate = date('now'), ttime = time('now'), value = 'not running' WHERE name = 'script';")
+		e.db_con.commit()
 
-			e.connect()
-			e.login()
+		e.connect()
+		e.login()
 
-			# get status of security system
-			e.getStatus()
+		# get status of security system
+		e.getStatus()
 
-			e.poll()
-		
-			# monitor loop
-			max_login_wait = 3
-			login_wait = 0
-			e.sleep = 0
-			while(True):
-				e.heardEnter()
-				rsp = e.receiveResponse()
-				if rsp == 'c':
-					e.socket.close()
-					e.resetData()
-					time.sleep(10)
-					e.loggedin = False
-					login_wait = 0
+		e.poll()
+
+		# monitor loop
+		max_login_wait = 3
+		login_wait = 0
+		e.sleep = 0
+		while(True):
+			e.heardEnter()
+			rsp = e.receiveResponse()
+			if rsp == 'c':
+				e.socket.close()
+				e.resetData()
+				time.sleep(10)
+				e.loggedin = False
+				login_wait = 0
+				e.sleep = 0
+				e.connect()
+				e.login()
+			elif rsp == '':
+				e.sleep += 1
+				if e.sleep == 10:
+					if e.loggedin == False:
+						if login_wait == max_login_wait:
+							e.printFatal('failed to login or logged out')
+						else:
+							login_wait += 1
+							e.printNormal('system: login wait = ' + str(login_wait))
 					e.sleep = 0
-					e.connect()
-					e.login()
-				elif rsp == '':
-					e.sleep += 1
-					if e.sleep == 10:
-						if e.loggedin == False:
-							if login_wait == max_login_wait:
-								e.printFatal('failed to login or logged out')
-							else:
-								login_wait += 1
-								e.printNormal('system: login wait = ' + str(login_wait))
-						e.sleep = 0
-					else:
-						time.sleep(1)
 				else:
-					# does it ever get here ?
-					e.printNormal('system: rsp = ' + rsp)
+					time.sleep(1)
+			else:
+				# does it ever get here ?
+				e.printNormal('system: rsp = ' + rsp)
 
-		except KeyboardInterrupt:
-			e.printFatal('closing script through ctrl-c')
-		except socket.error, err:
-			e.printFatal('socket error ' + str(err[0]))
-        
+	except KeyboardInterrupt:
+		e.db_con.commit();
+		e.db_con.close()
+		e.printFatal('closing script through ctrl-c')
+	except socket.error, err:
+		e.db_con.commit();
+		e.db_con.close()
+		e.printFatal('socket error ' + str(err[0]))
+
+        finally:
+                e.db_con.commit();
+                e.db_con.close()
+
