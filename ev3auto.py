@@ -1,18 +1,18 @@
 #! /usr/bin/env python
 #
-# This script depends on ev3pi.py to be running, and if it is then it will automatically 
+# This script depends on ev3pi.py to be running, and if it is then it will automatically
 # arm and disarm the security system based on a daily schedule.
 #
-# The basic assumption behind this script is you want the security system on at night when 
+# The basic assumption behind this script is you want the security system on at night when
 # you are asleep and it shut offs when you are awake
 #
-# If on vacation, then don't make any changes. 
+# If on vacation or schedule is off, then don't make any changes.
 # When on vacation, system should be in leave mode, but this script won't make any changes.
 #
 # The day of week is: Sunday, Monday, ... Friday, Saturday (0-6)
 # To simplify the logic, arm time must be after earliest arm time (22:00:00)
 #
-# run this script as a crontab every 15 minutes - arm/disarm doesn't need to be super accurate
+# run this script as a crontab every 15 moinutes - arm/disarm doesn't need to be super accurate
 #	sudo crontab -e
 
 import socket
@@ -32,12 +32,13 @@ class Ev3auto:
 		self.db_cmd = self.db_con.cursor()
 		self.weekday = {0 : 'Monday', 1 : 'Tuesday', 2 : 'Wednesday', 3 : 'Thursday', 4 : 'Friday', 5 : 'Saturday', 6 : 'Sunday'}
 		#
-		# change the items in angle brackets below
+		# CHANGE THE ITEMS IN THE ANGLE BRACKETS BELOW - DO NOT PUBLISH
 		#
-		self.gmail_password = <your gmail password>		# your gmail password
-		self.gmail_address = <your gmail address>		# your gmail email address
+		self.gmail_password = <your gmail password>	# your gmail password
+		self.gmail_address = <your gmail address>	# your gmail email address
+		self.cellphone = <your cell#>@<carrier sms>	# your carrier's way to send texts via email to your phone
 		#
-		# CHANGE THE ITEMS ABOVE
+		# CHANGE THE ITEMS ABOVE - DO NOT PUBLISH
 		#
 
 	def sendAlert(self):
@@ -47,31 +48,38 @@ class Ev3auto:
 		mail.ehlo()
 		mail.starttls()
 		mail.login(self.gmail_address, self.gmail_password)
-		mail.sendmail("cell","5122013169@txt.att.net",message)
+		mail.sendmail("cell", self.cellphone, message)
 		mail.close()
 
 if __name__ == '__main__':
-		try:
-			e = Ev3auto()
+	try:
+		e = Ev3auto()
 
-			# e.dbInit() is performed by ev3pi.py
+		# e.dbInit() is performed by ev3pi.py
 
-			# read vacation from database, but don't make any changes if vacation == yes
-			v = e.db_cmd.execute('SELECT * FROM status WHERE name = "vacation";')
-			for row in v:
-				vacation = row[3]
+		# read vacation from database, but don't make any changes if vacation == yes
+		v = e.db_cmd.execute('SELECT * FROM status WHERE name = "vacation";')
+		for row in v:
+			vacation = row[3]
 
-			# read system from database
-			v = e.db_cmd.execute('SELECT * FROM status WHERE name = "system";')
-			for row in v:
-				system = row[3]
+		# read schedule from database, but don't make any changes if vacation == yes
+		s = e.db_cmd.execute('SELECT * FROM status WHERE name = "schedule";')
+		for row in s:
+			schedule = row[3]
 
-			# vacation must be yes or no - don't use else
-			if vacation == 'yes':
-				if system == 'sleep' or system == 'disarm':
-					# send alert that home security is not set
-					e.sendAlert()
+  		# read system from database
+		v = e.db_cmd.execute('SELECT * FROM status WHERE name = "system";')
+		for row in v:
+			system = row[3]
 
+		# vacation must be yes or no - don't use else
+		if vacation == 'yes':
+			if system == 'sleep' or system == 'disarm':
+				# send alert that home security is not set
+				e.sendAlert()
+
+		# only make changes if schedule is on
+		if schedule == "on":
 			if vacation == 'no':
 				d = datetime.datetime.today().weekday()
 				day = e.weekday[d]
@@ -81,7 +89,7 @@ if __name__ == '__main__':
 				for row in t:
 					armTime = row[3]
 					disarmTime = row[4]
-				
+
 				current_time = time.strftime("%H:%M:%S")
 				ct = time.strptime(current_time, "%H:%M:%S")
 				at = time.strptime(armTime, "%H:%M:%S")
@@ -91,8 +99,8 @@ if __name__ == '__main__':
 				zt = time.strptime("00:00:00", "%H:%M:%S")
 				# Should it arm between arm time and midnight?
 				if at >= eat and at <= mt and ct >= eat and ct <= mt:
-					if system == 'disarm':
-						e.db_cmd.execute('UPDATE status SET value = "sleep" WHERE name = "command";')
+				if system == 'disarm':
+					e.db_cmd.execute('UPDATE status SET value = "sleep" WHERE name = "command";')
 
 				# Should it arm between midnight and disarm time?
 				if at >= zt and at <= dt and ct >= zt and ct <= dt:
@@ -109,6 +117,6 @@ if __name__ == '__main__':
 						if system == 'armed':
 							e.db_cmd.execute('UPDATE status SET value = "disarm" WHERE name = "command";')
 
-		finally:
-			e.db_con.commit();
-			e.db_con.close()
+	finally:
+		e.db_con.commit();
+		e.db_con.close()
