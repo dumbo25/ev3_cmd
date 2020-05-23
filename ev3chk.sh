@@ -3,11 +3,11 @@
 ps -ef | grep -v grep | grep ev3pi.py
 if [ $? != 0 ];
 then
-        echo $?, process not found, restart
+        echo $?, ev3pi.py not found, restarting
         python /usr/local/bin/ev3pi.py >/dev/null 2>&1 &
 else
         # ev3pi.py not found, so restart
-        echo $?, process found, then do nothing
+        echo $?, ev3pi.py found, then do nothing
 fi
 # add the following lines to:
 #	$ sudo crontab -e
